@@ -7,8 +7,41 @@ import { asyncHandler } from "../utils/asyncHandler.js";
 import { uploadOnCloudinary } from "../utils/cloudinary.js";
 
 const getAllVideos = asyncHandler(async (req, res) => {
-  const { page = 1, limit = 10, query, sortBy, sortType, userId } = req.query;
-  //TODO: get all videos based on query, sort, pagination
+  const { page, limit, query, sortType } = req.query;
+  try {
+    // Build the match query dynamically based on the 'query' parameter
+    const matchQuery = query ? { $text: { $search: query } } : {};
+
+    const pipeline = [
+      {
+        $match: matchQuery,
+      },
+      {
+        $sort: {
+          duration: sortType === "desc" ? -1 : 1,
+        },
+      },
+      {
+        $skip: (parseInt(page) - 1) * parseInt(limit),
+      },
+      {
+        $limit: parseInt(limit),
+      },
+    ];
+
+    // Execute the aggregation pipeline against your MongoDB collection
+    const videos = await Video.aggregate(pipeline);
+
+    return res
+      .status(200)
+      .json(
+        new ApiResponse(200, { data: videos }, "Videos  fetched successfully")
+      );
+  } catch (error) {
+    console.log("VideoController -> getAllVideos error", error);
+    // Returning an error response in case of failure
+    throw new ApiError(500, error?.message || "Internal server error");
+  }
 });
 
 const publishAVideo = asyncHandler(async (req, res) => {
