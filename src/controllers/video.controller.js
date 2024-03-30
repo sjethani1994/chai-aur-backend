@@ -45,13 +45,102 @@ const getAllVideos = asyncHandler(async (req, res) => {
 });
 
 const publishAVideo = asyncHandler(async (req, res) => {
-  const { title, description } = req.body;
-  // TODO: get video, upload to cloudinary, create video
+  try {
+    // Extracting title and description from the request body
+    const { title, description } = req.body;
+
+    // Checking if title and description are provided
+    if (!title || !description) {
+      throw new ApiError(400, "Title and Description are required fields!");
+    }
+
+    // Retrieving file paths for video and thumbnail from the request files
+    const videoFilePath = req.files?.videoFile[0]?.path;
+    const thumbnailFilePath = req.files?.thumbnail[0]?.path;
+
+    // Checking if video file is missing
+    if (!videoFilePath) {
+      throw new ApiError(400, "Video file is missing");
+    }
+
+    // Checking if thumbnail file is missing
+    if (!thumbnailFilePath) {
+      throw new ApiError(400, "Thumbnail file is missing");
+    }
+
+    // Uploading video and thumbnail to Cloudinary
+
+    const uploadedThumbnail = await uploadOnCloudinary(thumbnailFilePath);
+    const uploadedVideo = await uploadOnCloudinary(videoFilePath);
+    // Checking if video upload was successful
+    if (!uploadedVideo.url) {
+      throw new ApiError(400, "Error while uploading the video");
+    }
+
+    // Checking if thumbnail upload was successful
+    if (!uploadedThumbnail.url) {
+      throw new ApiError(400, "Error while uploading the thumbnail");
+    }
+    // Creating a new video document in the database
+    const video = await Video.create({
+      title,
+      description,
+      duration: uploadedVideo?.duration,
+      videoFile: uploadedVideo.url,
+      thumbnail: uploadedThumbnail.url,
+      owner: req.user._id, // Assuming req.user._id contains the ID of the authenticated user
+    });
+
+    // Sending success response with the created video document
+    return res
+      .status(201)
+      .json(
+        new ApiResponse(200, { data: video }, "Video uploaded successfully")
+      );
+  } catch (err) {
+    console.log("publishAVideo Error", err);
+    // Throwing an error response if any error occurs during video publishing
+    throw new ApiError(
+      409,
+      err.message || "Conflict while publishing the video"
+    );
+  }
 });
 
 const getVideoById = asyncHandler(async (req, res) => {
-  const { videoId } = req.params;
-  //TODO: get video by id
+  try {
+    const { videoId } = req.params;
+
+    // Fetch the video from the database using its ID
+    const video = await Video.findById(videoId);
+
+    // Check if the video exists
+    if (!video) {
+      // If the video does not exist, return a 404 Not Found error
+      return res.status(404).json({
+        success: false,
+        message: "Video not found",
+      });
+    }
+
+    // If the video exists, return it in the response
+    return res
+      .status(201)
+      .json(
+        new ApiResponse(
+          200,
+          { data: video },
+          `Video ${videoId} fetched successfully`
+        )
+      );
+  } catch (error) {
+    // If an error occurs during the database operation, return a 500 Internal Server Error
+    console.log("getVideoById Error:", error);
+    res.status(500).json({
+      success: false,
+      message: "Internal server error",
+    });
+  }
 });
 
 const updateVideo = asyncHandler(async (req, res) => {
