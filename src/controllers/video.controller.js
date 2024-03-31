@@ -1,8 +1,9 @@
+import mongoose from "mongoose";
 import { Video } from "../models/video.model.js";
 import { ApiError } from "../utils/ApiError.js";
 import { ApiResponse } from "../utils/ApiResponse.js";
 import { asyncHandler } from "../utils/asyncHandler.js";
-import { uploadOnCloudinary } from "../utils/cloudinary.js";
+import { uploadOnCloudinary, deleteOnCloudinary } from "../utils/cloudinary.js";
 
 const getAllVideos = asyncHandler(async (req, res) => {
   const { page, limit, query, sortType } = req.query;
@@ -137,7 +138,6 @@ const getVideoById = asyncHandler(async (req, res) => {
 
 const updateVideo = asyncHandler(async (req, res) => {
   try {
-    console.log(req.params);
     const { videoId } = req.params;
 
     // Extracting title and description from the request body
@@ -152,7 +152,10 @@ const updateVideo = asyncHandler(async (req, res) => {
     }
 
     // Checking if video exists before updating
-    const existingVideo = await Video.findById(videoId);
+    const existingVideo = await Video.findOne({
+      _id: new mongoose.Types.ObjectId(videoId), // Correct usage of mongoose.Types.ObjectId()
+      owner: new mongoose.Types.ObjectId(req?.user?._id),
+    });
 
     if (!existingVideo) {
       throw new ApiError(404, "Video not found");
@@ -189,20 +192,44 @@ const deleteVideo = asyncHandler(async (req, res) => {
   try {
     const { videoId } = req.params;
 
-    // Delete the video from the database using its ID
-    const deletedVideo = await Video.findByIdAndDelete(videoId);
+    // Checking if video exists before updating
+    const existingVideo = await Video.findOne({
+      _id: new mongoose.Types.ObjectId(videoId),
+      owner: new mongoose.Types.ObjectId(req?.user?._id),
+    });
 
     // Check if the video exists
-    if (!deletedVideo) {
+    if (!existingVideo) {
       // If the video does not exist, return a 404 Not Found error
       throw new ApiError(404, "Video not found");
     }
 
+    // Delete the video and thumbnail files from Cloudinary
+    const deletedVideoFile = await deleteOnCloudinary(existingVideo.videoFile); // Assuming videoFile is the Cloudinary URL of the video
+    const deletedThumbnail = await deleteOnCloudinary(existingVideo.thumbnail); // Assuming thumbnail is the Cloudinary URL of the thumbnail image file
+
+    if (deletedVideoFile.result !== "ok") {
+      throw new ApiError(400, "Error while deleting the video");
+    }
+
+    if (deletedThumbnail.result !== "ok") {
+      throw new ApiError(400, "Error while deleting the thumbnail");
+    }
+
+    const deletedVideo = await Video.findByIdAndDelete(videoId);
+
+    if (!deletedVideo) {
+      throw new ApiError(400, "Error while deleting the video in database");
+    }
     // If the video is successfully deleted, return a success response
     return res
       .status(200)
       .json(
-        new ApiResponse(200, { data: video }, `Video deleted successfully`)
+        new ApiResponse(
+          200,
+          { data: deletedVideo },
+          `Video deleted successfully`
+        )
       );
   } catch (error) {
     // If an error occurs during the database operation, return a 500 Internal Server Error
@@ -212,7 +239,33 @@ const deleteVideo = asyncHandler(async (req, res) => {
 });
 
 const togglePublishStatus = asyncHandler(async (req, res) => {
-  const { videoId } = req.params;
+  try {
+    const { videoId } = req.params;
+
+    // Checking if video exists before updating
+    const video = await Video.findOne({
+      _id: new mongoose.Types.ObjectId(videoId),
+      owner: new mongoose.Types.ObjectId(req?.user?._id),
+    });
+
+    // Check if the video exists
+    if (!video) {
+      // If the video does not exist, return a 404 Not Found error
+      throw new ApiError(404, "Video not found");
+    }
+
+    // Toggle the publish status directly on the video object
+    video.isPublished = !video.isPublished;
+    await video.save({ validateBeforeSave: false });
+
+    return res
+      .status(200)
+      .json(new ApiResponse(200, video, "Publish flag updated successfully."));
+  } catch (error) {
+    // If an error occurs during the database operation, return a 500 Internal Server Error
+    console.error("togglePublishStatus Error:", error);
+    throw new ApiError(500, error.message || "Internal server error");
+  }
 });
 
 export {
