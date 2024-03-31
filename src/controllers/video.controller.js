@@ -1,6 +1,4 @@
-import mongoose, { isValidObjectId } from "mongoose";
 import { Video } from "../models/video.model.js";
-import { User } from "../models/user.model.js";
 import { ApiError } from "../utils/ApiError.js";
 import { ApiResponse } from "../utils/ApiResponse.js";
 import { asyncHandler } from "../utils/asyncHandler.js";
@@ -117,10 +115,7 @@ const getVideoById = asyncHandler(async (req, res) => {
     // Check if the video exists
     if (!video) {
       // If the video does not exist, return a 404 Not Found error
-      return res.status(404).json({
-        success: false,
-        message: "Video not found",
-      });
+      throw new ApiError(404, "Video not found");
     }
 
     // If the video exists, return it in the response
@@ -136,21 +131,86 @@ const getVideoById = asyncHandler(async (req, res) => {
   } catch (error) {
     // If an error occurs during the database operation, return a 500 Internal Server Error
     console.log("getVideoById Error:", error);
-    res.status(500).json({
-      success: false,
-      message: "Internal server error",
-    });
+    throw new ApiError(500, error.message || "Internal server error");
   }
 });
 
 const updateVideo = asyncHandler(async (req, res) => {
-  const { videoId } = req.params;
-  //TODO: update video details like title, description, thumbnail
+  try {
+    const { videoId } = req.params;
+
+    // Extracting title and description from the request body
+    const { title, description } = req.body;
+
+    // Retrieving file path for thumbnail from the request files
+    const thumbnailFilePath = req.files?.thumbnail[0]?.path;
+
+    // Checking if thumbnail file is missing
+    if (!thumbnailFilePath) {
+      throw new ApiError(400, "Thumbnail file is missing");
+    }
+
+    // Checking if video exists before updating
+    const existingVideo = await Video.findOne({
+      _id: videoId,
+      owner: req?.user?._id,
+    });
+
+    if (!existingVideo) {
+      throw new ApiError(404, "Video not found");
+    }
+
+    // Uploading thumbnail to Cloudinary
+    const uploadedThumbnail = await uploadOnCloudinary(thumbnailFilePath);
+
+    // Checking if thumbnail upload was successful
+    if (!uploadedThumbnail.url) {
+      throw new ApiError(400, "Error while uploading the thumbnail");
+    }
+
+    // Updating video details in the database
+    const updatedVideo = await Video.findByIdAndUpdate(
+      videoId,
+      {
+        title,
+        description,
+        thumbnail: uploadedThumbnail.url,
+      },
+      { new: true }
+    );
+
+    return res
+      .status(200)
+      .json(new ApiResponse(200, updatedVideo, `Video updated successfully`)); // Use updatedVideo instead of updateVideo
+  } catch (error) {
+    throw new ApiError(500, error.message || "Internal server error");
+  }
 });
 
 const deleteVideo = asyncHandler(async (req, res) => {
-  const { videoId } = req.params;
-  //TODO: delete video
+  try {
+    const { videoId } = req.params;
+
+    // Delete the video from the database using its ID
+    const deletedVideo = await Video.findByIdAndDelete(videoId);
+
+    // Check if the video exists
+    if (!deletedVideo) {
+      // If the video does not exist, return a 404 Not Found error
+      throw new ApiError(404, "Video not found");
+    }
+
+    // If the video is successfully deleted, return a success response
+    return res
+      .status(200)
+      .json(
+        new ApiResponse(200, { data: video }, `Video deleted successfully`)
+      );
+  } catch (error) {
+    // If an error occurs during the database operation, return a 500 Internal Server Error
+    console.log("deleteVideo Error:", error);
+    throw new ApiError(500, error.message || "Internal server error");
+  }
 });
 
 const togglePublishStatus = asyncHandler(async (req, res) => {
