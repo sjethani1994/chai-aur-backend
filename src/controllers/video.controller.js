@@ -137,13 +137,14 @@ const getVideoById = asyncHandler(async (req, res) => {
 
 const updateVideo = asyncHandler(async (req, res) => {
   try {
+    console.log(req.params);
     const { videoId } = req.params;
 
     // Extracting title and description from the request body
     const { title, description } = req.body;
 
     // Retrieving file path for thumbnail from the request files
-    const thumbnailFilePath = req.files?.thumbnail[0]?.path;
+    const thumbnailFilePath = req.file?.path;
 
     // Checking if thumbnail file is missing
     if (!thumbnailFilePath) {
@@ -151,10 +152,7 @@ const updateVideo = asyncHandler(async (req, res) => {
     }
 
     // Checking if video exists before updating
-    const existingVideo = await Video.findOne({
-      _id: videoId,
-      owner: req?.user?._id,
-    });
+    const existingVideo = await Video.findById(videoId);
 
     if (!existingVideo) {
       throw new ApiError(404, "Video not found");
