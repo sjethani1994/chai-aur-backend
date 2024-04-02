@@ -7,90 +7,97 @@ import { Video } from "../models/video.model.js";
 
 // Controller to get all comments for a video
 const getVideoComments = asyncHandler(async (req, res) => {
-  // Extract videoId from request parameters
-  const { videoId } = req.params;
-  const { page = 1, limit = 10 } = req.query;
+  try {
+    // Extract videoId from request parameters
+    const { videoId } = req.params;
+    const { page = 1, limit = 10 } = req.query;
 
-  // Find the video by its ID
-  const video = await Video.findById(videoId);
+    // Find the video by its ID
+    const video = await Video.findById(videoId);
 
-  // Check if the video exists
-  if (!video) {
-    throw new ApiError(404, "Video not found");
-  }
+    // Check if the video exists
+    if (!video) {
+      throw new ApiError(404, "Video not found");
+    }
 
-  // Aggregation pipeline to fetch comments for the given video with additional details
-  const commentsAggregate = Comment.aggregate([
-    {
-      $match: {
-        video: new mongoose.Types.ObjectId(videoId),
-      },
-    },
-    {
-      $lookup: {
-        from: "users",
-        localField: "owner",
-        foreignField: "_id",
-        as: "owner",
-      },
-    },
-    {
-      $lookup: {
-        from: "likes",
-        localField: "_id",
-        foreignField: "comment",
-        as: "likes",
-      },
-    },
-    {
-      $addFields: {
-        likesCount: {
-          $size: "$likes",
+    // Aggregation pipeline to fetch comments for the given video with additional details
+    const commentsAggregate = Comment.aggregate([
+      {
+        $match: {
+          video: new mongoose.Types.ObjectId(videoId),
         },
-        owner: {
-          $first: "$owner",
+      },
+      {
+        $lookup: {
+          from: "users",
+          localField: "owner",
+          foreignField: "_id",
+          as: "owner",
         },
-        isLiked: {
-          $cond: {
-            if: { $in: [req.user?._id, "$likes.likedBy"] },
-            then: true,
-            else: false,
+      },
+      {
+        $lookup: {
+          from: "likes",
+          localField: "_id",
+          foreignField: "comment",
+          as: "likes",
+        },
+      },
+      {
+        $addFields: {
+          likesCount: {
+            $size: "$likes",
+          },
+          owner: {
+            $first: "$owner",
+          },
+          isLiked: {
+            $cond: {
+              if: { $in: [req.user?._id, "$likes.likedBy"] },
+              then: true,
+              else: false,
+            },
           },
         },
       },
-    },
-    {
-      $sort: {
-        createdAt: -1,
-      },
-    },
-    {
-      $project: {
-        content: 1,
-        createdAt: 1,
-        likesCount: 1,
-        owner: {
-          username: 1,
-          fullName: 1,
-          "avatar.url": 1,
+      {
+        $sort: {
+          createdAt: -1,
         },
-        isLiked: 1,
       },
-    },
-  ]);
+      {
+        $project: {
+          content: 1,
+          createdAt: 1,
+          likesCount: 1,
+          owner: {
+            username: 1,
+            fullName: 1,
+            "avatar.url": 1,
+          },
+          isLiked: 1,
+        },
+      },
+    ]);
 
-  // Pagination options
-  const options = {
-    page: parseInt(page, 10),
-    limit: parseInt(limit, 10),
-  };
+    // Pagination options
+    const options = {
+      page: parseInt(page, 10),
+      limit: parseInt(limit, 10),
+    };
 
-  // Execute aggregation with pagination
-  const comments = await Comment.aggregatePaginate(commentsAggregate, options);
+    // Execute aggregation with pagination
+    const comments = await Comment.aggregatePaginate(
+      commentsAggregate,
+      options
+    );
 
-  return res
-    .status(200)
-    .json(new ApiResponse(200, comments, "Comments fetched successfully"));
+    return res
+      .status(200)
+      .json(new ApiResponse(200, comments, "Comments fetched successfully"));
+  } catch (error) {
+    throw new ApiError(500, error.message || "Interval Server Error");
+  }
 });
 
 // Controller to add a comment to a video
