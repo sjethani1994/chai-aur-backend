@@ -4,11 +4,11 @@ const playlistSchema = new Schema(
   {
     name: {
       type: String,
-      required: true,
+      required: [true, "name is required"],
     },
     description: {
       type: String,
-      required: true,
+      required: [true, "description is required"],
     },
     videos: [
       {
@@ -21,7 +21,9 @@ const playlistSchema = new Schema(
       ref: "User",
     },
   },
-  { timestamps: true }
+  {
+    timestamps: true,
+  }
 );
 
 export const Playlist = mongoose.model("Playlist", playlistSchema);
